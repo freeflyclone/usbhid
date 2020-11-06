@@ -5,6 +5,8 @@
 #define PID	0x572b
 #define VID 0x0483
 
+// Polling interval: in USB frame units, 1ms for SS|FS, 125us for HS
+
 using namespace std;
 
 bool printdev(libusb_device *dev);
@@ -17,6 +19,7 @@ int main(void) {
 	int r{0};
 	size_t cnt{0};
 	int idx{-1};
+	bool hadKernelDriver{false};
 
 	if ((r = libusb_init(&ctx)) < 0){
 		cerr << "Init Error" << r << endl;
@@ -40,25 +43,40 @@ int main(void) {
 	}
 
 	if (idx >= 0) {
-		cout << "Idx is valid!" << endl;
-		printdev(devs[idx]);
-	}
+			cout << "Idx is valid!" << endl;
+			printdev(devs[idx]);
 
-	// Okay, so now we know the index of our valid USB HID device.
-	if((dev = libusb_open_device_with_vid_pid(ctx, VID, PID)) == nullptr) {
-		cout << "Cannot open device" << endl;
-		return 0;
-	}
-
-	cout << "Device opened!" << endl;
-
-	if(libusb_kernel_driver_active(dev, 0) == 1) {
-		if(libusb_detach_kernel_driver(dev, 0) == 0) {
-			cout << "Kernel driver detached" << endl;
+		// Okay, so now we know the index of our valid USB HID device.
+		if((dev = libusb_open_device_with_vid_pid(ctx, VID, PID)) == nullptr) {
+			cout << "Cannot open device" << endl;
 			return 0;
 		}
+
+		cout << "Device opened!" << endl;
+
+		if(libusb_kernel_driver_active(dev, 0) == 1) {
+			if(libusb_detach_kernel_driver(dev, 0) == 0) {
+				cout << "Kernel driver detached" << endl;
+				hadKernelDriver = true;
+			}
+			else
+				return 0;
+		}
+
+		if ((r = libusb_claim_interface(dev, 0)) < 0) {
+			cout << "Can't claim interface" << endl;
+			return 0;
+		}
+		
+		cout << "Interface claimed!" << endl;
+
+		// so, at this point I *should* be able to read from the device.
 	}
 
+	if (hadKernelDriver)
+		libusb_attach_kernel_driver(dev, 0);
+
+	libusb_close(dev);
 	libusb_exit(ctx);
 	return 0;
 }
@@ -114,6 +132,9 @@ void printconfig(libusb_config_descriptor *config) {
 	const libusb_interface *iface;
 	const libusb_interface_descriptor *iface_desc;
 	const libusb_endpoint_descriptor *ep_desc;
+	const string transferTypeStrings[] = {"Control", "Isochronous", "Bulk", "Interrupt"};
+	const string syncTypeStrings[] = {"None", "Asynchronous", "Adaptive", "Synchronous"};
+	const string transferDirStrings[] = {"Output", "Input"};
 
 	cout << "Interfaces: " << (int)config->bNumInterfaces << ", ";
 	for (int i=0; i<config->bNumInterfaces; i++) {
@@ -121,12 +142,25 @@ void printconfig(libusb_config_descriptor *config) {
 		cout << "Alt settings: " << (int)iface->num_altsetting << endl;
 		for (int j=0; j<iface->num_altsetting; j++) {
 			iface_desc = &iface->altsetting[j];
-			cout << "    Interface#: " << (int)iface_desc->bInterfaceNumber << " | ";
-			cout << "#Endpoints: " << (int)iface_desc->bNumEndpoints << endl;
+			cout << "  Interface: " << (int)iface_desc->bInterfaceNumber << " | ";
+			cout << "Endpoints: " << (int)iface_desc->bNumEndpoints << endl;
 			for (int k=0; k<iface_desc->bNumEndpoints; k++) {
 				ep_desc = &iface_desc->endpoint[k];
-				cout << "      Endpoint Type: " << (int)ep_desc->bDescriptorType << " | ";
-				cout << "Addr: " << (int)ep_desc->bEndpointAddress << endl;
+				cout << "    Endpoint Addr: " << to_string(ep_desc->bEndpointAddress & 0xf) << " | ";
+				auto transferDir = (ep_desc->bEndpointAddress & 0x80) >> 7;
+				cout << "Dir: " << transferDirStrings[transferDir] << " | ";
+				auto transferType = (ep_desc->bmAttributes & 0x3);
+				cout << "Type: " << transferTypeStrings[transferType] << " | ";
+				if (transferType == LIBUSB_TRANSFER_TYPE_ISOCHRONOUS) {
+					auto syncType = (ep_desc->bmAttributes & 0x0C) >> 2;
+					cout << "Sync: " << syncTypeStrings[syncType] << " | ";
+				}
+				cout << "MaxPacketSize: " << to_string(ep_desc->wMaxPacketSize) << " | ";
+				cout << "Interval: " << to_string(ep_desc->bInterval) << " | ";
+				cout << "Refresh: " << to_string(ep_desc->bRefresh) << " | ";
+				cout << "SyncAddress: " << to_string(ep_desc->bSynchAddress) << " | ";
+				cout << "ExtraLength: " << to_string(ep_desc->extra_length);
+				cout << endl;
 			}
 			cout << endl;
 		}
