@@ -38,18 +38,19 @@ int main(void) {
 	for (int i = 0; i < cnt; i++) {
 		if (matchdev(devs[i])) {
 			idx = i;
+			cout << "Found the one we want!" << endl;
 			break;
 		}
 	}
 
-	if (idx >= 0) {
-			cout << "Idx is valid!" << endl;
-			printdev(devs[idx]);
+	while (idx) {
+		cout << "Idx is valid!" << endl;
+		//printdev(devs[idx]);
 
 		// Okay, so now we know the index of our valid USB HID device.
 		if((dev = libusb_open_device_with_vid_pid(ctx, VID, PID)) == nullptr) {
 			cout << "Cannot open device" << endl;
-			return 0;
+			break;
 		}
 
 		cout << "Device opened!" << endl;
@@ -60,23 +61,40 @@ int main(void) {
 				hadKernelDriver = true;
 			}
 			else
-				return 0;
+				break;
 		}
 
 		if ((r = libusb_claim_interface(dev, 0)) < 0) {
 			cout << "Can't claim interface" << endl;
-			return 0;
+			break;
 		}
-		
+
 		cout << "Interface claimed!" << endl;
 
 		// so, at this point I *should* be able to read from the device.
+		while(1) {
+			unsigned char inputBuffer[4]{0};
+			int len{0};
+			int recv_ret = libusb_interrupt_transfer(dev, 0x81, inputBuffer, sizeof(inputBuffer), &len, 0);
+			cout << "Report: " 
+				<< to_string(inputBuffer[0]) 
+				<< "," 
+				<< to_string(inputBuffer[1]) 
+				<< "," 
+				<< to_string(inputBuffer[2]) 
+				<< "," 
+				<< to_string(inputBuffer[3]) 
+				<< "\r";
+		}
+		idx = 0;
 	}
 
 	if (hadKernelDriver)
 		libusb_attach_kernel_driver(dev, 0);
 
-	libusb_close(dev);
+	if (dev)
+		libusb_close(dev);
+
 	libusb_exit(ctx);
 	return 0;
 }
