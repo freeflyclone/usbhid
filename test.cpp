@@ -2,8 +2,10 @@
 #include <iomanip>
 #include <libusb-1.0/libusb.h>
 
-#define PID	0x572b
 #define VID 0x0483
+#define PID 0x572b
+//#define VID 0x068e
+//#define PID 0x00f3
 
 // Polling interval: in USB frame units, 1ms for SS|FS, 125us for HS
 
@@ -45,7 +47,7 @@ int main(void) {
 
 	while (idx) {
 		cout << "Idx is valid!" << endl;
-		//printdev(devs[idx]);
+		printdev(devs[idx]);
 
 		// Okay, so now we know the index of our valid USB HID device.
 		if((dev = libusb_open_device_with_vid_pid(ctx, VID, PID)) == nullptr) {
@@ -72,8 +74,8 @@ int main(void) {
 		cout << "Interface claimed!" << endl;
 
 		// so, at this point I *should* be able to read from the device.
-		while(1) {
-			unsigned char inputBuffer[4]{0};
+		while(0) {
+			unsigned char inputBuffer[6]{0};
 			int len{0};
 			int recv_ret = libusb_interrupt_transfer(dev, 0x81, inputBuffer, sizeof(inputBuffer), &len, 0);
 			cout << "Report: " 
@@ -84,7 +86,11 @@ int main(void) {
 				<< to_string(inputBuffer[2]) 
 				<< "," 
 				<< to_string(inputBuffer[3]) 
-				<< "\r";
+				<< "," 
+				<< to_string(inputBuffer[4]) 
+				<< "," 
+				<< to_string(inputBuffer[5]) 
+				<< endl;
 		}
 		idx = 0;
 	}
@@ -179,8 +185,15 @@ void printconfig(libusb_config_descriptor *config) {
 				cout << "SyncAddress: " << to_string(ep_desc->bSynchAddress) << " | ";
 				cout << "ExtraLength: " << to_string(ep_desc->extra_length);
 				cout << endl;
+				
 			}
-			cout << endl;
+			if (iface_desc->extra_length > 0) {
+				cout << "Extra Length: " << to_string(iface_desc->extra_length) << endl;
+				for (int i=0; i<iface_desc->extra_length; i++) {
+					printf("0x%02X, ", iface_desc->extra[i] & 0xff);
+				}
+				cout << endl;
+			}
 		}
 	}
 }
